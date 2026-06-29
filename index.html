@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Print-ready A4 portfolio from the site manifest: light cover, numeric order,
+all renders/photos shown large & uncropped, short text."""
+import json, os, html
+
+SITE = "/Users/m.Madhfar/Documents/ahmad cv/portfolio/site"
+data = json.load(open(os.path.join(SITE, "assets", "data.json")))
+projects = sorted(data["projects"], key=lambda p: p["num"])
+PLAN_CAP = 4            # max drawing pages per project in the PDF
+SHOWPIECE = {3, 9, 14, 20, 26, 27}   # richer galleries for the strongest work
+def img_cap(num): return 12 if num in SHOWPIECE else 8   # total images per project in PDF
+def esc(s): return html.escape(str(s)) if s is not None else ""
+
+CSS = """
+@page { size: A4; margin: 0; }
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --paper:#f3efe7;--paper2:#e9e3d8;--ink:#17150f;--text:#1d1b14;--soft:#5b564a;
+  --mute:#8a8475;--line:rgba(23,21,15,.16);--accent:#a8472a;
+  --fd:'Fraunces',Georgia,serif;--fb:'Inter',system-ui,sans-serif;
+}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--fb);color:var(--text);background:#fff;font-size:10.5pt;line-height:1.5}
+.page{width:210mm;height:297mm;position:relative;overflow:hidden;page-break-after:always;background:var(--paper)}
+.page:last-child{page-break-after:auto}
+img{display:block}
+.pad{padding:20mm 20mm}
+.ey{font-size:8.5pt;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:6mm}
+.h2{font-family:var(--fd);font-weight:400;font-size:30pt;line-height:1.02;letter-spacing:-.015em}
+
+/* cover — full-page designed image */
+.cover{position:relative;height:297mm;overflow:hidden;background:#fff}
+.cover__img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+
+/* profile */
+.lead{font-family:var(--fd);font-size:14pt;line-height:1.45;margin:5mm 0;font-weight:400}
+.prof p{color:var(--soft);max-width:150mm;margin-bottom:4mm}
+.prof__cols{display:grid;grid-template-columns:1fr 1fr;gap:12mm;margin-top:9mm}
+.skill{padding:3.6mm 0;border-top:1px solid var(--line)}
+.skill b{display:block;font-size:8pt;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:1.6mm;font-weight:600}
+.skill span{font-size:9.5pt;color:var(--text)}
+.facts2 .skill span{color:var(--soft)}
+
+/* index (two columns) */
+.idx2{display:grid;grid-template-columns:1fr 1fr;gap:0 16mm;margin-top:7mm}
+.idx__row{display:grid;grid-template-columns:9mm 1fr 13mm;gap:3mm;align-items:baseline;padding:2.4mm 0;border-bottom:1px solid var(--line);font-size:9pt}
+.idx__row .n{font-family:var(--fd);color:var(--accent);font-size:10.5pt}
+.idx__row .t{font-weight:500;line-height:1.2}
+.idx__row .y{color:var(--mute);text-align:right;font-variant-numeric:tabular-nums;font-size:8.5pt}
+
+/* project hero page */
+.pj__img{height:174mm;width:100%;overflow:hidden;background:var(--ink);position:relative}
+.pj__img img{width:100%;height:100%;object-fit:cover}
+.pj__num{position:absolute;top:9mm;left:13mm;font-family:var(--fd);font-size:13pt;color:#fff;mix-blend-mode:difference}
+.pj__tag{position:absolute;top:9mm;right:13mm;font-size:8pt;letter-spacing:.14em;text-transform:uppercase;background:rgba(243,239,231,.92);color:var(--ink);padding:2mm 4mm;border-radius:20px}
+.pj__body{padding:11mm 20mm;display:flex;flex-direction:column;height:123mm}
+.pj__title{font-family:var(--fd);font-weight:400;font-size:28pt;line-height:1;letter-spacing:-.015em}
+.pj__sub{font-size:10.5pt;color:var(--accent);margin-top:3mm;font-weight:500}
+.pj__main{display:grid;grid-template-columns:1.5fr 1fr;gap:12mm;margin-top:8mm;align-items:start}
+.pj__summary{font-family:var(--fd);font-size:13pt;line-height:1.45;color:#2a271f}
+.pj__facts .f{display:flex;justify-content:space-between;gap:6mm;padding:2.4mm 0;border-bottom:1px solid var(--line);font-size:9pt}
+.pj__facts .f .k{color:var(--mute);letter-spacing:.04em}
+.pj__facts .f .v{font-weight:500;text-align:right}
+
+/* gallery pages: 6 landscape (2x3) or 4 portrait (2x2) per page, rows spread to fill */
+.gp{position:relative;display:flex;flex-direction:column;height:297mm;padding:17mm 14mm 13mm}
+.gp__lab{position:absolute;top:11mm;left:14mm;font-size:8pt;letter-spacing:.2em;text-transform:uppercase;color:var(--mute)}
+.gp__grid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:7mm;align-content:space-between;align-items:center;justify-items:center}
+.gp__cell{display:flex;flex-direction:column;align-items:center;max-width:100%}
+.gp__cell img{max-width:100%;max-height:78mm;width:auto;height:auto;border-radius:2px;box-shadow:0 0 0 1px rgba(23,21,15,.07)}
+.gp__cell.plan img{box-shadow:0 0 0 1px var(--line)}
+/* portrait-only pages: 4-up, taller cells */
+.gp.tall .gp__cell img{max-height:120mm}
+.gp.duo .gp__cell img{max-height:126mm}
+.gp.single .gp__grid{grid-template-columns:1fr;place-content:center}
+.gp.single .gp__cell img{max-height:250mm}
+.gp__cap{font-size:7pt;color:var(--mute);margin-top:2.5mm;text-align:center;letter-spacing:.02em;max-width:94%}
+
+/* back (light) */
+.back{display:flex;flex-direction:column;justify-content:center;padding:30mm 20mm;height:297mm;background:var(--paper)}
+.back h2{font-family:var(--fd);font-weight:300;font-size:38pt;line-height:1.04;margin-bottom:12mm;color:var(--ink)}
+.back h2 em{color:var(--accent);font-style:italic}
+.back .row{display:grid;grid-template-columns:1fr 1fr;gap:8mm 14mm;border-top:1px solid var(--line);padding-top:7mm;max-width:150mm}
+.back .row div b{display:block;font-size:8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);margin-bottom:1.6mm;font-weight:600}
+.back .row div span{font-family:var(--fd);font-size:13pt}
+"""
+
+def project_pages(p):
+    facts = [("Category",p["category"]),("Type",p["type"]),("Location",p["location"]),
+             ("Year",p.get("year") or "—"),("Role",p["role"])]
+    media = p["media"]
+    hero = media[0]
+    gallery = media[1:]   # every remaining image — nothing dropped
+
+    out = f"""
+    <section class="page">
+      <div class="pj__img">
+        <span class="pj__num">{p['num']:02d}</span>
+        <span class="pj__tag">{esc(p['category'])}</span>
+        <img src="{esc(hero['lg'])}">
+      </div>
+      <div class="pj__body">
+        <h3 class="pj__title">{esc(p['title'])}</h3>
+        {f'<div class="pj__sub">{esc(p["subtitle"])}</div>' if p.get('subtitle') else ''}
+        <div class="pj__main">
+          <p class="pj__summary">{esc(p['summary'])}</p>
+          <div class="pj__facts">
+            {''.join(f'<div class="f"><span class="k">{esc(k)}</span><span class="v">{esc(v)}</span></div>' for k,v in facts)}
+          </div>
+        </div>
+      </div>
+    </section>"""
+
+    # 4 images per page (2x2), grouped by orientation so rows stay tidy
+    def portrait(m):
+        w, h = m.get("w") or 4, m.get("h") or 3
+        return h > w * 1.12
+    land = [m for m in gallery if not portrait(m)]
+    port = [m for m in gallery if portrait(m)]
+    pages = ([("land", land[i:i+6]) for i in range(0, len(land), 6)] +
+             [("port", port[i:i+4]) for i in range(0, len(port), 4)])
+
+    def cell(m):
+        plan = " plan" if m.get("kind") == "plan" else ""
+        cap = f'<div class="gp__cap">{esc(m["caption"])}</div>' if m.get("caption") else ""
+        return f'<div class="gp__cell{plan}"><img src="{esc(m["sm"])}">{cap}</div>'
+
+    for kind, grp in pages:
+        n = len(grp)
+        cls = "tall" if kind == "port" else ""
+        if n == 1: cls = "single"
+        elif n == 2: cls += " duo"
+        cells = "".join(cell(m) for m in grp)
+        out += f"""
+        <section class="page gp {cls}">
+          <div class="gp__lab">{p['num']:02d} · {esc(p['title'])} — imagery</div>
+          <div class="gp__grid">{cells}</div>
+        </section>"""
+    return out
+
+def _idx_row(p):
+    return (f'<div class="idx__row"><span class="n">{p["num"]:02d}</span>'
+            f'<span class="t">{esc(p["title"])}</span>'
+            f'<span class="y">{esc(p.get("year") or "")}</span></div>')
+_half = (len(projects) + 1) // 2
+idx_rows = (f'<div class="idx2"><div>'
+            + "".join(_idx_row(p) for p in projects[:_half])
+            + '</div><div>'
+            + "".join(_idx_row(p) for p in projects[_half:])
+            + '</div></div>')
+
+skills = [
+    ("Design &amp; Drafting","Autodesk Revit (BIM) · AutoCAD 2D/3D"),
+    ("3D Visualization","3ds Max · Lumion · SketchUp · Photoshop"),
+    ("Site &amp; Construction","Supervision · QA/QC · lifecycle management"),
+    ("Quantity Surveying","Material take-offs · structural &amp; finishing estimation"),
+    ("Documentation","Specifications · contracts · technical reporting"),
+    ("Coordination","Government entities · clients · contractors"),
+]
+skills_html = "".join(f'<div class="skill"><b>{k}</b><span>{v}</span></div>' for k,v in skills)
+project_html = "".join(project_pages(p) for p in projects)
+
+doc = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>{CSS}</style></head><body>
+
+<section class="page cover">
+  <img class="cover__img" src="assets/cover-full.jpg" alt="Ahmed Dahmash — Portfolio of Selected Works 2026">
+</section>
+
+<section class="page pad prof">
+  <div class="ey">Profile</div>
+  <div class="h2">Both sides of the project.</div>
+  <p class="lead">More than four years of experience, working both the drawing board and the scaffold.</p>
+  <p>I produce drawings and 3D visualizations in Revit, AutoCAD, Lumion and 3ds Max, and supervise
+  construction on site from excavation to final finishing — quantity surveying, QA/QC, technical
+  reporting, contract preparation, and coordination with clients, contractors and government bodies.</p>
+  <p>I have delivered government-approved projects featured on national television, graduated with
+  distinction from Sana'a University, and am completing the CAPM certification.</p>
+  <div class="prof__cols">
+    <div><div class="ey" style="margin-bottom:4mm">Capabilities</div>{skills_html}</div>
+    <div class="facts2"><div class="ey" style="margin-bottom:4mm">At a glance</div>
+      <div class="skill"><b>Experience</b><span>4+ years · design &amp; site supervision</span></div>
+      <div class="skill"><b>Projects supervised</b><span>15+ residential, commercial &amp; structural</span></div>
+      <div class="skill"><b>Education</b><span>B.Arch — Sana'a University (Distinction)</span></div>
+      <div class="skill"><b>Certification</b><span>CAPM — Civil Academy, 2026</span></div>
+      <div class="skill"><b>Languages</b><span>Arabic (native) · English (professional)</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="page pad">
+  <div class="ey">Index — 28 Projects</div>
+  <div class="h2" style="font-size:24pt;margin-bottom:7mm">Contents</div>
+  {idx_rows}
+</section>
+
+{project_html}
+
+<section class="page back">
+  <h2>Let's build<br><em>something.</em></h2>
+  <div class="row">
+    <div><b>Email</b><span>ahmeddhmsh@gmail.com</span></div>
+    <div><b>Based in</b><span>Sana'a, Yemen</span></div>
+    <div><b>Phone · Saudi Arabia</b><span>+966 55 849 7786</span></div>
+    <div><b>Phone · Yemen</b><span>+967 777 879 088</span></div>
+  </div>
+</section>
+
+</body></html>"""
+
+open(os.path.join(SITE, "print.html"), "w").write(doc)
+np = 3 + sum(1 + ((len([m for m in p["media"][1:] if m.get("kind")!="plan"]) + min(len([m for m in p["media"] if m.get("kind")=="plan"]),PLAN_CAP) + 1)//2) for p in projects) + 1
+print(f"wrote print.html — ~{np} pages")
